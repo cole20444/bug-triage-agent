@@ -233,7 +233,7 @@ Or just describe the issue naturally and I'll try to extract the information."""
 
 def handle_management_commands(text: str, user_id: str, say, channel_id: str = None) -> bool:
     """Handle management commands for bug reports"""
-    print(f"DEBUG: handle_management_commands called with text: '{text}'")
+
     # Extract bot mention if present
     import re
     bot_mention_match = re.search(r'<@([A-Z0-9]+)>', text)
@@ -243,7 +243,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     
     text_lower = text.lower().strip()
     print(f"Checking management command: '{text_lower}'")
-    print(f"Available commands to check: cancel, list reports, show reports, reports, stats, search, config repo, add tags, list repos, analyze changes, investigate, help")
+
     
     # Check for management commands
     if text_lower in ['cancel', 'exit', 'quit', 'stop', 'nevermind']:
@@ -257,13 +257,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     
     elif any(text_lower.startswith(cmd) for cmd in ['list reports', 'show reports', 'reports']) and 'repo' not in text_lower:
         # List recent reports
-        print(f"Executing list reports command - text_lower: '{text_lower}'")
-        print(f"Command check: {any(cmd in text_lower for cmd in ['list reports', 'show reports', 'reports'])}")
-        print(f"Repo check: {'repo' not in text_lower}")
-        print(f"Individual command checks:")
-        print(f"  'list reports' in '{text_lower}': {'list reports' in text_lower}")
-        print(f"  'show reports' in '{text_lower}': {'show reports' in text_lower}")
-        print(f"  'reports' in '{text_lower}': {'reports' in text_lower}")
+        print(f"Executing list reports command")
         reports = storage.get_bug_reports(limit=5)
         if reports:
             response = "**Recent Bug Reports:**\n"
@@ -566,7 +560,7 @@ Just mention me and describe the issue!
         say(help_text)
         return True
     
-    print(f"DEBUG: No management command matched, returning False")
+
     return False
 
 def _investigate_bug(report: Dict, config: Dict) -> Dict:
