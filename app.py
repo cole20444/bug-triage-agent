@@ -23,21 +23,55 @@ def handle_mention(event, say):
     
     print(f"Received mention from user {user_id} in channel {channel}: {text[:50]}...")
     
-    # If user is already in a conversation, continue from where they left off
+    # If user is already in a conversation, try to extract their response from the mention
     if user_id in user_conversations:
         user_state = user_conversations[user_id]
         step = user_state["step"]
         print(f"User {user_id} already in conversation at step {step}")
         
-        if step == 0:
-            say(f"<@{user_id}> I'm waiting for your *brief summary* of the issue. Please provide a summary of what's happening.")
-        elif step == 1:
-            say(f"<@{user_id}> I'm waiting for the *affected page(s)*. Please paste the full URLs of the pages that are affected.")
-        elif step == 2:
-            say(f"<@{user_id}> I'm waiting for the *steps to reproduce* the issue. Please describe how to reproduce this problem.")
-        elif step == 3:
-            say(f"<@{user_id}> I'm waiting for any *templates or components* involved. If none, just say 'none' or 'N/A'.")
-        return
+        # Try to extract the actual message content (remove the bot mention)
+        # The text format is usually: "<@BOT_ID> actual message content"
+        # Extract bot ID from the mention in the text
+        import re
+        bot_mention_match = re.search(r'<@([A-Z0-9]+)>', text)
+        if bot_mention_match:
+            bot_id = bot_mention_match.group(1)
+            actual_message = text.replace(f"<@{bot_id}>", "").strip()
+        else:
+            actual_message = text.strip()
+        
+        if actual_message and len(actual_message) > 5:  # If there's actual content
+            print(f"Extracted message from mention: {actual_message[:50]}...")
+            # Process the message as if it came through the message handler
+            if step == 0:
+                user_state["data"]["summary"] = actual_message
+                say("Which *page(s)* are affected? (Please paste full URLs)")
+                user_state["step"] = 1
+            elif step == 1:
+                user_state["data"]["pages"] = actual_message
+                say("How can we *reproduce* the issue?")
+                user_state["step"] = 2
+            elif step == 2:
+                user_state["data"]["steps"] = actual_message
+                say("Are there any *templates or components* involved? _(Optional)_")
+                user_state["step"] = 3
+            elif step == 3:
+                user_state["data"]["components"] = actual_message
+                report = format_bug_report(user_state["data"])
+                say(f"✅ Here's your bug report:\n```{report}```\nI'll notify the dev team!")
+                del user_conversations[user_id]
+            return
+        else:
+            # No actual message content, just remind them what we need
+            if step == 0:
+                say(f"<@{user_id}> I'm waiting for your *brief summary* of the issue. Please provide a summary of what's happening.")
+            elif step == 1:
+                say(f"<@{user_id}> I'm waiting for the *affected page(s)*. Please paste the full URLs of the pages that are affected.")
+            elif step == 2:
+                say(f"<@{user_id}> I'm waiting for the *steps to reproduce* the issue. Please describe how to reproduce this problem.")
+            elif step == 3:
+                say(f"<@{user_id}> I'm waiting for any *templates or components* involved. If none, just say 'none' or 'N/A'.")
+            return
     
     # Start new conversation
     user_conversations[user_id] = {"step": 0, "data": {}}
