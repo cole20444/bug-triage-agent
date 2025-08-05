@@ -244,7 +244,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     print(f"Checking management command: '{text_lower}'")
     
     # Cancel/exit bug entry session
-    elif text_lower in ['cancel', 'exit', 'quit', 'stop', 'nevermind']:
+    if text_lower in ['cancel', 'exit', 'quit', 'stop', 'nevermind']:
         if user_id in user_conversations:
             del user_conversations[user_id]
             say("❌ Bug report cancelled. You can start a new one anytime!")
