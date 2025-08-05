@@ -471,7 +471,10 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
                 return True
             
             # Analyze the bug with repository context
+            print(f"Starting investigation for bug {report_id}")
+            print(f"Repository config: {config}")
             investigation = _investigate_bug(report, config)
+            print(f"Investigation results: {investigation}")
             
             # Format and send the investigation report
             response = _format_investigation_report(report, investigation)

@@ -6,6 +6,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 from github_integration import github_analyzer
+from azure_integration import azure_analyzer
 
 class RepoType(Enum):
     GITHUB = "github"
@@ -194,6 +195,7 @@ class CodeAnalyzer:
     
     def _analyze_github_repo(self, repo_config: Dict, days: int) -> Dict:
         """Analyze GitHub repository"""
+        print(f"Analyzing GitHub repo: {repo_config['name']} - {repo_config['url']}")
         try:
             # Get recent commits
             commits = github_analyzer.get_recent_commits(
@@ -273,15 +275,51 @@ class CodeAnalyzer:
     
     def _analyze_azure_repo(self, repo_config: Dict, days: int) -> Dict:
         """Analyze Azure DevOps repository"""
-        return {
-            "name": repo_config['name'],
-            "type": "azure",
-            "url": repo_config['url'],
-            "recent_commits": [],
-            "changed_files": [],
-            "potential_issues": [],
-            "status": "analysis_pending"
-        }
+        print(f"Analyzing Azure repo: {repo_config['name']} - {repo_config['url']}")
+        try:
+            # Get recent commits
+            commits = azure_analyzer.get_recent_commits(
+                repo_config['url'], 
+                days=days, 
+                branch=repo_config.get('branch', 'main')
+            )
+            
+            # Extract bug-related keywords from the repository metadata
+            bug_keywords = self._extract_bug_keywords(repo_config)
+            
+            # Analyze commit impact
+            impact_analysis = azure_analyzer.analyze_commit_impact(commits, bug_keywords)
+            
+            # Get repository stats
+            stats = azure_analyzer.get_repository_stats(
+                repo_config['url'], 
+                branch=repo_config.get('branch', 'main')
+            )
+            
+            return {
+                "name": repo_config['name'],
+                "type": "azure",
+                "url": repo_config['url'],
+                "recent_commits": commits,
+                "changed_files": impact_analysis['affected_files'],
+                "potential_issues": impact_analysis['high_impact_commits'],
+                "impact_analysis": impact_analysis,
+                "stats": stats,
+                "status": "analyzed"
+            }
+            
+        except Exception as e:
+            print(f"Error analyzing Azure DevOps repository: {e}")
+            return {
+                "name": repo_config['name'],
+                "type": "azure",
+                "url": repo_config['url'],
+                "recent_commits": [],
+                "changed_files": [],
+                "potential_issues": [],
+                "status": "error",
+                "error": str(e)
+            }
     
     def _analyze_bitbucket_repo(self, repo_config: Dict, days: int) -> Dict:
         """Analyze Bitbucket repository"""
