@@ -2,6 +2,7 @@ from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from report_handler import format_bug_report
 from storage import storage
+from repo_config import repo_manager, code_analyzer, RepositoryConfig, RepoType
 import requests
 
 import os
@@ -311,6 +312,76 @@ def handle_management_commands(text: str, user_id: str, say) -> bool:
             say(response)
             return True
     
+    # Repository configuration commands
+    elif text_lower.startswith('config repo'):
+        # Format: config repo project_name repo_type repo_url [branch]
+        parts = text.split()
+        if len(parts) >= 4:
+            project_name = parts[2]
+            repo_type_str = parts[3].lower()
+            repo_url = parts[4]
+            branch = parts[5] if len(parts) > 5 else "main"
+            
+            try:
+                repo_type = RepoType(repo_type_str)
+                repo_config = RepositoryConfig(
+                    name=project_name,
+                    type=repo_type,
+                    url=repo_url,
+                    token="",  # Would need to be provided securely
+                    branch=branch
+                )
+                
+                success = repo_manager.add_channel_config(
+                    channel_id, channel, project_name, [repo_config]
+                )
+                
+                if success:
+                    say(f"✅ Repository configured for project: *{project_name}*\nType: {repo_type.value}\nURL: {repo_url}\nBranch: {branch}")
+                else:
+                    say("❌ Failed to configure repository")
+                    
+            except ValueError:
+                say(f"❌ Invalid repository type: {repo_type_str}\nSupported types: github, azure, bitbucket, adobe")
+        else:
+            say("❌ Usage: `config repo project_name repo_type repo_url [branch]`\nExample: `config repo client-website github https://github.com/client/website main`")
+        return True
+    
+    # Analyze recent changes
+    elif any(cmd in text_lower for cmd in ['analyze changes', 'recent changes', 'code analysis']):
+        analysis = code_analyzer.analyze_recent_changes(channel_id)
+        
+        if "error" in analysis:
+            say(f"❌ {analysis['error']}\nUse `config repo` to set up repository configuration first.")
+        else:
+            response = f"**Code Analysis for {analysis['project']}:**\n\n"
+            for repo in analysis['repositories']:
+                response += f"📁 *{repo['name']}* ({repo['type']})\n"
+                response += f"   Status: {repo['status']}\n"
+                if repo.get('recent_commits'):
+                    response += f"   Recent commits: {len(repo['recent_commits'])}\n"
+                response += "\n"
+            
+            say(response)
+        return True
+    
+    # List repository configurations
+    elif text_lower in ['list repos', 'show repos', 'repo configs']:
+        configs = repo_manager.list_channel_configs()
+        
+        if configs:
+            response = "**Repository Configurations:**\n\n"
+            for config in configs:
+                response += f"📂 *{config['project_name']}* (Channel: {config['channel_name']})\n"
+                for repo in config['repos']:
+                    response += f"   • {repo['name']} ({repo['type']}) - {repo['url']}\n"
+                response += "\n"
+        else:
+            response = "No repository configurations found.\nUse `config repo` to set up repositories."
+        
+        say(response)
+        return True
+    
     # Help command
     elif text_lower in ['help', 'commands', 'what can you do']:
         help_text = """**Bug Triage Agent Commands:**
@@ -324,7 +395,17 @@ Just mention me and describe the issue!
 • `search [term]` - Search for reports
 • `help` - Show this help message
 
-**Example:**
+🔧 **Repository Integration:**
+• `config repo project_name type url [branch]` - Configure repository
+• `list repos` - Show repository configurations
+• `analyze changes` - Analyze recent code changes
+• `recent changes` - Same as analyze changes
+
+**Repository Types:** github, azure, bitbucket, adobe
+
+**Examples:**
+@Bug Triage Agent config repo client-website github https://github.com/client/website
+@Bug Triage Agent analyze changes
 @Bug Triage Agent search mobile performance"""
         
         say(help_text)
