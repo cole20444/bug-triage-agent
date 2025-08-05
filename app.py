@@ -147,7 +147,7 @@ def handle_mention(event, say):
     
     # Check if this is a management command first
     print(f"Checking for management commands in: '{text[:50]}...'")
-    if handle_management_commands(text, user_id, say):
+    if handle_management_commands(text, user_id, say, channel):
         print("Management command handled successfully")
         return
     else:
@@ -229,7 +229,7 @@ Or just describe the issue naturally and I'll try to extract the information."""
     
     say(template_message)
 
-def handle_management_commands(text: str, user_id: str, say) -> bool:
+def handle_management_commands(text: str, user_id: str, say, channel_id: str = None) -> bool:
     """Handle management commands for bug reports"""
     # Extract bot mention if present
     import re
@@ -313,14 +313,17 @@ def handle_management_commands(text: str, user_id: str, say) -> bool:
             return True
     
     # Repository configuration commands
-    elif text_lower.startswith('config repo'):
+    elif 'config repo' in text_lower:
+        print(f"Found config repo command in: '{text}'")
         # Format: config repo project_name repo_type repo_url [branch]
-        parts = text.split()
-        if len(parts) >= 4:
-            project_name = parts[2]
-            repo_type_str = parts[3].lower()
-            repo_url = parts[4]
-            branch = parts[5] if len(parts) > 5 else "main"
+        # Find the actual command part after bot mention
+        config_match = re.search(r'config repo\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?', text, re.IGNORECASE)
+        if config_match:
+            print(f"Config match found: {config_match.groups()}")
+            project_name = config_match.group(1)
+            repo_type_str = config_match.group(2).lower()
+            repo_url = config_match.group(3)
+            branch = config_match.group(4) if config_match.group(4) else "main"
             
             try:
                 repo_type = RepoType(repo_type_str)
@@ -333,7 +336,7 @@ def handle_management_commands(text: str, user_id: str, say) -> bool:
                 )
                 
                 success = repo_manager.add_channel_config(
-                    channel_id, channel, project_name, [repo_config]
+                    channel_id, f"channel-{channel_id}", project_name, [repo_config]
                 )
                 
                 if success:
