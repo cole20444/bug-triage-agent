@@ -5,6 +5,7 @@ from storage import storage
 from repo_config import repo_manager, code_analyzer, RepositoryConfig, RepoType
 from storage import storage
 import requests
+from typing import Dict, List
 
 import os
 from dotenv import load_dotenv
@@ -470,10 +471,10 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
                 return True
             
             # Analyze the bug with repository context
-            investigation = self._investigate_bug(report, config)
+            investigation = _investigate_bug(report, config)
             
             # Format and send the investigation report
-            response = self._format_investigation_report(report, investigation)
+            response = _format_investigation_report(report, investigation)
             say(response)
             return True
         else:
