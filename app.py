@@ -3,6 +3,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from report_handler import format_bug_report
 from storage import storage
 from repo_config import repo_manager, code_analyzer, RepositoryConfig, RepoType
+from storage import storage
 import requests
 
 import os
@@ -449,6 +450,36 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
         say(response)
         return True
     
+    # Investigate specific bug report
+    elif text_lower.startswith('investigate'):
+        # Format: investigate BUG-2025-001
+        investigate_match = re.search(r'investigate\s+(\S+)', text, re.IGNORECASE)
+        if investigate_match:
+            report_id = investigate_match.group(1)
+            
+            # Get the bug report
+            report = storage.get_bug_report(report_id)
+            if not report:
+                say(f"❌ Bug report *{report_id}* not found")
+                return True
+            
+            # Get repository configuration for this channel
+            config = repo_manager.get_channel_config(channel_id)
+            if not config:
+                say(f"❌ No repository configuration found for this channel.\nUse `config repo` to set up repositories first.")
+                return True
+            
+            # Analyze the bug with repository context
+            investigation = self._investigate_bug(report, config)
+            
+            # Format and send the investigation report
+            response = self._format_investigation_report(report, investigation)
+            say(response)
+            return True
+        else:
+            say("❌ Usage: `investigate BUG-2025-001`\nExample: `investigate BUG-2025-001`")
+        return True
+    
     # Help command
     elif text_lower in ['help', 'commands', 'what can you do']:
         help_text = """**Bug Triage Agent Commands:**
@@ -469,6 +500,9 @@ Just mention me and describe the issue!
 • `analyze changes` - Analyze recent code changes
 • `recent changes` - Same as analyze changes
 
+🔍 **Bug Investigation:**
+• `investigate BUG-2025-001` - Deep dive investigation of a specific bug
+
 **Repository Types:** github, azure, bitbucket, adobe
 **Site Types:** wordpress, react, laravel, vue, etc.
 **Hosting Platforms:** wordpress-vip, netlify, vercel, aws, etc.
@@ -477,12 +511,127 @@ Just mention me and describe the issue!
 @Bug Triage Agent config repo client-website github https://github.com/client/website main wordpress wordpress-vip
 @Bug Triage Agent add tags client-website high-traffic seo-critical
 @Bug Triage Agent analyze changes
+@Bug Triage Agent investigate BUG-2025-001
 @Bug Triage Agent search mobile performance"""
         
         say(help_text)
         return True
     
     return False
+
+def _investigate_bug(report: Dict, config: Dict) -> Dict:
+    """Investigate a bug report using repository analysis"""
+    investigation = {
+        'bug_report': report,
+        'repository_analysis': [],
+        'potential_causes': [],
+        'recommendations': [],
+        'recent_changes': [],
+        'affected_components': []
+    }
+    
+    # Analyze each repository in the configuration
+    for repo_config in config['repos']:
+        repo_analysis = code_analyzer._analyze_github_repo(repo_config, days=7)
+        investigation['repository_analysis'].append(repo_analysis)
+        
+        # Extract potential causes from high-impact commits
+        if repo_analysis.get('impact_analysis'):
+            high_impact = repo_analysis['impact_analysis'].get('high_impact_commits', [])
+            for commit in high_impact:
+                investigation['potential_causes'].append({
+                    'commit': commit['sha'],
+                    'message': commit['message'],
+                    'author': commit['author'],
+                    'date': commit['date'],
+                    'url': commit['url'],
+                    'impact_score': commit['impact_score']
+                })
+        
+        # Track recent changes
+        if repo_analysis.get('recent_commits'):
+            investigation['recent_changes'].extend(repo_analysis['recent_commits'][:3])
+        
+        # Track affected components
+        if repo_analysis.get('changed_files'):
+            investigation['affected_components'].extend(repo_analysis['changed_files'])
+    
+    # Generate recommendations based on site type and bug description
+    investigation['recommendations'] = self._generate_recommendations(report, config)
+    
+    return investigation
+
+def _generate_recommendations(report: Dict, config: Dict) -> List[str]:
+    """Generate recommendations based on bug report and repository context"""
+    recommendations = []
+    
+    # Extract bug keywords
+    bug_text = f"{report.get('summary', '')} {report.get('steps', '')}".lower()
+    
+    # Site type specific recommendations
+    for repo in config['repos']:
+        site_type = repo.get('site_type', '').lower()
+        hosting = repo.get('hosting_platform', '').lower()
+        
+        if 'mobile' in bug_text and 'performance' in bug_text:
+            if site_type == 'wordpress':
+                recommendations.append("Check WordPress mobile optimization plugins and theme responsiveness")
+                if hosting == 'wordpress-vip':
+                    recommendations.append("Review VIP's mobile performance guidelines and caching configuration")
+            elif site_type == 'react':
+                recommendations.append("Check React component re-rendering and mobile-specific optimizations")
+        
+        if 'slow' in bug_text or 'performance' in bug_text:
+            recommendations.append("Review recent code changes for performance impact")
+            recommendations.append("Check for large file uploads or heavy database queries")
+        
+        if 'error' in bug_text or 'crash' in bug_text:
+            recommendations.append("Review error logs and recent commits for breaking changes")
+            recommendations.append("Check for missing dependencies or configuration issues")
+    
+    # General recommendations
+    recommendations.append("Review recent commits for potential root causes")
+    recommendations.append("Check affected files for syntax errors or logic issues")
+    recommendations.append("Test the reported steps to reproduce the issue")
+    
+    return list(set(recommendations))  # Remove duplicates
+
+def _format_investigation_report(report: Dict, investigation: Dict) -> str:
+    """Format the investigation report for Slack"""
+    response = f"🔍 **Bug Investigation Report - {report['report_id']}**\n\n"
+    
+    # Bug summary
+    response += f"**Bug Summary:**\n{report.get('summary', 'N/A')}\n\n"
+    
+    # Recent changes analysis
+    if investigation['recent_changes']:
+        response += "**Recent Code Changes:**\n"
+        for commit in investigation['recent_changes'][:3]:
+            response += f"• {commit['sha']} - {commit['message'][:50]}...\n"
+        response += "\n"
+    
+    # Potential causes
+    if investigation['potential_causes']:
+        response += "**Potential Root Causes:**\n"
+        for cause in investigation['potential_causes'][:3]:
+            response += f"• {cause['commit']} - {cause['message'][:60]}...\n"
+            response += f"  Impact Score: {cause['impact_score']}\n"
+        response += "\n"
+    
+    # Affected components
+    if investigation['affected_components']:
+        response += "**Affected Components:**\n"
+        for component in investigation['affected_components'][:5]:
+            response += f"• {component}\n"
+        response += "\n"
+    
+    # Recommendations
+    if investigation['recommendations']:
+        response += "**Recommendations:**\n"
+        for rec in investigation['recommendations'][:5]:
+            response += f"• {rec}\n"
+    
+    return response
 
 @app.event("message")
 def handle_message(event, say):

@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
+from github_integration import github_analyzer
 
 class RepoType(Enum):
     GITHUB = "github"
@@ -193,17 +194,82 @@ class CodeAnalyzer:
     
     def _analyze_github_repo(self, repo_config: Dict, days: int) -> Dict:
         """Analyze GitHub repository"""
-        # This would integrate with GitHub API
-        # For now, return placeholder structure
-        return {
-            "name": repo_config['name'],
-            "type": "github",
-            "url": repo_config['url'],
-            "recent_commits": [],
-            "changed_files": [],
-            "potential_issues": [],
-            "status": "analysis_pending"
-        }
+        try:
+            # Get recent commits
+            commits = github_analyzer.get_recent_commits(
+                repo_config['url'], 
+                days=days, 
+                branch=repo_config.get('branch', 'main')
+            )
+            
+            # Extract bug-related keywords from the repository metadata
+            bug_keywords = self._extract_bug_keywords(repo_config)
+            
+            # Analyze commit impact
+            impact_analysis = github_analyzer.analyze_commit_impact(commits, bug_keywords)
+            
+            # Get repository stats
+            stats = github_analyzer.get_repository_stats(
+                repo_config['url'], 
+                branch=repo_config.get('branch', 'main')
+            )
+            
+            return {
+                "name": repo_config['name'],
+                "type": "github",
+                "url": repo_config['url'],
+                "recent_commits": commits,
+                "changed_files": impact_analysis['affected_files'],
+                "potential_issues": impact_analysis['high_impact_commits'],
+                "impact_analysis": impact_analysis,
+                "stats": stats,
+                "status": "analyzed"
+            }
+            
+        except Exception as e:
+            print(f"Error analyzing GitHub repository: {e}")
+            return {
+                "name": repo_config['name'],
+                "type": "github",
+                "url": repo_config['url'],
+                "recent_commits": [],
+                "changed_files": [],
+                "potential_issues": [],
+                "status": "error",
+                "error": str(e)
+            }
+    
+    def _extract_bug_keywords(self, repo_config: Dict) -> List[str]:
+        """Extract bug-related keywords from repository metadata"""
+        keywords = []
+        
+        # Add site type specific keywords
+        site_type = repo_config.get('site_type', '').lower()
+        if site_type == 'wordpress':
+            keywords.extend(['wordpress', 'wp', 'plugin', 'theme', 'hook', 'filter'])
+        elif site_type == 'react':
+            keywords.extend(['react', 'component', 'state', 'props', 'hook', 'render'])
+        elif site_type == 'laravel':
+            keywords.extend(['laravel', 'php', 'controller', 'model', 'migration'])
+        
+        # Add hosting platform specific keywords
+        hosting = repo_config.get('hosting_platform', '').lower()
+        if hosting == 'wordpress-vip':
+            keywords.extend(['vip', 'performance', 'caching', 'cdn'])
+        elif hosting == 'netlify':
+            keywords.extend(['netlify', 'deploy', 'build', 'function'])
+        elif hosting == 'vercel':
+            keywords.extend(['vercel', 'deploy', 'build', 'function'])
+        
+        # Add custom tags as keywords
+        custom_tags = repo_config.get('custom_tags', [])
+        keywords.extend([tag.lower() for tag in custom_tags])
+        
+        # Add general bug-related keywords
+        general_keywords = ['bug', 'fix', 'issue', 'error', 'performance', 'mobile', 'slow', 'break', 'crash']
+        keywords.extend(general_keywords)
+        
+        return list(set(keywords))  # Remove duplicates
     
     def _analyze_azure_repo(self, repo_config: Dict, days: int) -> Dict:
         """Analyze Azure DevOps repository"""
