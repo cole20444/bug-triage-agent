@@ -558,7 +558,7 @@ def _investigate_bug(report: Dict, config: Dict) -> Dict:
             investigation['affected_components'].extend(repo_analysis['changed_files'])
     
     # Generate recommendations based on site type and bug description
-    investigation['recommendations'] = self._generate_recommendations(report, config)
+    investigation['recommendations'] = _generate_recommendations(report, config)
     
     return investigation
 
