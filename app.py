@@ -243,8 +243,17 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     text_lower = text.lower().strip()
     print(f"Checking management command: '{text_lower}'")
     
+    # Cancel/exit bug entry session
+    elif text_lower in ['cancel', 'exit', 'quit', 'stop', 'nevermind']:
+        if user_id in user_conversations:
+            del user_conversations[user_id]
+            say("❌ Bug report cancelled. You can start a new one anytime!")
+        else:
+            say("No active bug report session to cancel.")
+        return True
+    
     # List recent reports
-    if any(cmd in text_lower for cmd in ['list reports', 'show reports', 'reports']) and 'repo' not in text_lower:
+    elif any(cmd in text_lower for cmd in ['list reports', 'show reports', 'reports']) and 'repo' not in text_lower:
         print(f"Executing list reports command")
         reports = storage.get_bug_reports(limit=5)
         if reports:
@@ -513,6 +522,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
 
 📝 **Report a Bug:**
 Just mention me and describe the issue!
+• `cancel` - Exit bug entry session
 
 📋 **Management Commands:**
 • `list reports` - Show recent bug reports
@@ -541,7 +551,8 @@ Just mention me and describe the issue!
 @Bug Triage Agent analyze changes
 @Bug Triage Agent investigate BUG-2025-001
 @Bug Triage Agent update BUG-2025-001 priority high
-@Bug Triage Agent search mobile performance"""
+@Bug Triage Agent search mobile performance
+@Bug Triage Agent cancel"""
         
         say(help_text)
         return True
