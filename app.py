@@ -4,6 +4,9 @@ from report_handler import format_bug_report
 from storage import storage
 from repo_config import repo_manager, code_analyzer, RepositoryConfig, RepoType
 from storage import storage
+from llm_analyzer import llm_analyzer
+from code_file_analyzer import code_analyzer as file_analyzer
+from issue_focused_analyzer import issue_analyzer
 import requests
 from typing import Dict, List
 
@@ -145,24 +148,16 @@ def handle_mention(event, say):
     channel = event.get("channel")
     text = event.get("text", "").strip()
     
-    print(f"Received mention from user {user_id} in channel {channel}: {text[:50]}...")
-    
     # Check if this is a management command first
-    print(f"Checking for management commands in: '{text[:50]}...'")
-    if handle_management_commands(text, user_id, say, channel):
-        print("Management command handled successfully")
+    if handle_management_commands(text, user_id, say, channel_id=channel):
         return
-    else:
-        print("No management command found, proceeding with normal flow")
     
     # If user is already in a conversation, try to parse their response
     if user_id in user_conversations:
         user_state = user_conversations[user_id]
-        print(f"User {user_id} already in conversation, parsing response...")
         
         # Parse the response
         parsed_data = parse_bug_report(text)
-        print(f"Parsed data: {parsed_data}")
         
         # Update existing data with new parsed data
         for key, value in parsed_data.items():
@@ -196,10 +191,8 @@ def handle_mention(event, say):
                 report_with_id = f"**Bug Report - {report_id}**\n\n{report}"
                 
                 say(f"✅ Here's your bug report:\n```{report_with_id}```\nI'll notify the dev team!")
-                print(f"Saved bug report {report_id} to database")
                 
             except Exception as e:
-                print(f"Error saving bug report: {e}")
                 report = format_bug_report(user_state["data"])
                 say(f"✅ Here's your bug report:\n```{report}```\nI'll notify the dev team!")
             
@@ -208,7 +201,6 @@ def handle_mention(event, say):
     
     # Start new conversation with template
     user_conversations[user_id] = {"step": 0, "data": {}}
-    print(f"Started new conversation with user {user_id} in channel {channel}")
     
     template_message = f"""<@{user_id}> Thanks for reporting a bug! 
 
@@ -242,7 +234,6 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
         text = text.replace(f"<@{bot_id}>", "").strip()
     
     text_lower = text.lower().strip()
-    print(f"Checking management command: '{text_lower}'")
 
     
     # Check for management commands
@@ -255,9 +246,8 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
             say("No active bug report session to cancel.")
         return True
     
-    elif any(text_lower.startswith(cmd) for cmd in ['list reports', 'show reports', 'reports']) and 'repo' not in text_lower:
+    elif text_lower.startswith('list reports') or text_lower.startswith('show reports') or text_lower.startswith('reports'):
         # List recent reports
-        print(f"Executing list reports command")
         reports = storage.get_bug_reports(limit=5)
         if reports:
             response = "**Recent Bug Reports:**\n"
@@ -276,7 +266,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
                     'critical': '🚨'
                 }.get(report['priority'], '⚪')
                 
-                response += f"{status_emoji} {priority_emoji} *{report['report_id']}* - {report['summary'][:50]}...\n"
+                response += f"{status_emoji} {priority_emoji} *{report['report_id']}* - {report['summary']}\n"
                 response += f"   Status: {report['status']}, Priority: {report['priority']}, Created: {report['created_at'][:10]}\n\n"
         else:
             response = "No bug reports found."
@@ -305,7 +295,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
         return True
     
     # Search reports
-    elif text_lower.startswith('search ') or 'search' in text_lower:
+    elif text_lower.startswith('search '):
         # Extract search query - look for 'search' keyword and get everything after it
         if text_lower.startswith('search '):
             query = text[7:].strip()  # Remove 'search ' prefix
@@ -318,7 +308,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
             if reports:
                 response = f"**Search Results for '{query}':**\n"
                 for report in reports:
-                    response += f"🔍 *{report['report_id']}* - {report['summary'][:60]}...\n"
+                    response += f"🔍 *{report['report_id']}* - {report['summary']}\n"
                     response += f"   Status: {report['status']}, Created: {report['created_at'][:10]}\n\n"
             else:
                 response = f"No reports found matching '{query}'."
@@ -328,7 +318,6 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     
     # Repository configuration commands
     elif 'config repo' in text_lower:
-        print(f"Found config repo command in: '{text}'")
         # Format: config repo project_name repo_type repo_url [branch] [site_type] [hosting_platform]
         # Find the actual command part after bot mention
         # Parse the config repo command manually
@@ -340,7 +329,6 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
             branch = parts[5] if len(parts) > 5 else "main"
             site_type = parts[6] if len(parts) > 6 else ""
             hosting_platform = parts[7] if len(parts) > 7 else ""
-            print(f"Parsed config: project={project_name}, type={repo_type_str}, url={repo_url}, branch={branch}, site_type={site_type}, hosting={hosting_platform}")
             
             try:
                 repo_type = RepoType(repo_type_str)
@@ -441,7 +429,6 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     
     # List repository configurations
     elif any(cmd in text_lower for cmd in ['list repos', 'show repos', 'repo configs', 'list repositories']):
-        print(f"Executing list repos command")
         configs = repo_manager.list_channel_configs()
         
         if configs:
@@ -506,10 +493,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
                 return True
             
             # Analyze the bug with repository context
-            print(f"Starting investigation for bug {report_id}")
-            print(f"Repository config: {config}")
             investigation = _investigate_bug(report, config)
-            print(f"Investigation results: {investigation}")
             
             # Format and send the investigation report
             response = _format_investigation_report(report, investigation)
@@ -564,20 +548,28 @@ Just mention me and describe the issue!
     return False
 
 def _investigate_bug(report: Dict, config: Dict) -> Dict:
-    """Investigate a bug report using repository analysis"""
+    """Investigate a bug report using repository analysis and LLM code analysis"""
+    # First, analyze the bug report to determine the primary issue type
+    issue_focus = issue_analyzer.analyze_bug_report(report)
+    
     investigation = {
         'bug_report': report,
+        'issue_focus': issue_focus,
         'repository_analysis': [],
         'potential_causes': [],
         'recommendations': [],
         'recent_changes': [],
-        'affected_components': []
+        'affected_components': [],
+        'llm_analysis': {},
+        'risk_assessment': {},
+        'focused_analysis': {}
     }
     
     # Analyze each repository in the configuration
     for repo_config in config['repos']:
         repo_type = repo_config.get('type', 'github')
-        print(f"Analyzing {repo_type} repository: {repo_config['name']}")
+        site_type = repo_config.get('site_type', '').lower()
+        print(f"Analyzing {repo_type} repository: {repo_config['name']} (Site type: {site_type})")
         
         if repo_type == 'azure':
             repo_analysis = code_analyzer._analyze_azure_repo(repo_config, days=7)
@@ -607,9 +599,46 @@ def _investigate_bug(report: Dict, config: Dict) -> Dict:
         # Track affected components
         if repo_analysis.get('changed_files'):
             investigation['affected_components'].extend(repo_analysis['changed_files'])
+        
+        # Perform LLM analysis for WordPress sites
+        if site_type == 'wordpress' and repo_analysis.get('recent_commits'):
+            print(f"Performing LLM analysis for WordPress site: {repo_config['name']}")
+            llm_analysis = llm_analyzer.analyze_wordpress_site(
+                repo_config['url'],
+                report,
+                repo_analysis['recent_commits']
+            )
+            investigation['llm_analysis'] = llm_analysis
+            
+            # Perform deep code file analysis
+            print(f"Performing deep code analysis for WordPress site: {repo_config['name']}")
+            code_analysis = file_analyzer.analyze_wordpress_site_code(
+                repo_config,
+                repo_analysis['recent_commits']
+            )
+            investigation['code_analysis'] = code_analysis
+            
+            # Add LLM recommendations to overall recommendations
+            if llm_analysis.get('recommendations'):
+                investigation['recommendations'].extend(llm_analysis['recommendations'])
+            
+            # Add code analysis recommendations
+            if code_analysis.get('specific_recommendations'):
+                investigation['recommendations'].extend(code_analysis['specific_recommendations'])
+            
+            # Add risk assessment
+            if llm_analysis.get('risk_assessment'):
+                investigation['risk_assessment'] = llm_analysis['risk_assessment']
+            
+            # Apply issue-focused filtering to the analysis results
+            investigation['focused_analysis'] = issue_analyzer.filter_analysis_results({
+                'code_analysis': code_analysis,
+                'recommendations': investigation['recommendations']
+            }, issue_focus)
     
-    # Generate recommendations based on site type and bug description
-    investigation['recommendations'] = _generate_recommendations(report, config)
+    # Generate basic recommendations if no LLM analysis was performed
+    if not investigation['recommendations']:
+        investigation['recommendations'] = _generate_recommendations(report, config)
     
     return investigation
 
@@ -655,6 +684,23 @@ def _format_investigation_report(report: Dict, investigation: Dict) -> str:
     # Bug summary
     response += f"**Bug Summary:**\n{report.get('summary', 'N/A')}\n\n"
     
+    # Issue-Focused Analysis Summary
+    if investigation.get('issue_focus'):
+        issue_focus = investigation['issue_focus']
+        response += issue_analyzer.generate_issue_specific_summary(issue_focus, investigation.get('focused_analysis', {}))
+        response += "\n\n"
+    
+    # Risk Assessment (if available)
+    if investigation.get('risk_assessment'):
+        risk = investigation['risk_assessment']
+        response += "**🚨 Risk Assessment:**\n"
+        for risk_type, level in risk.items():
+            if isinstance(level, dict) and 'level' in level:
+                response += f"• {risk_type}: {level['level']}\n"
+            elif isinstance(level, str):
+                response += f"• {risk_type}: {level}\n"
+        response += "\n"
+    
     # Repository analysis status
     if investigation['repository_analysis']:
         response += "**Repository Analysis:**\n"
@@ -672,6 +718,59 @@ def _format_investigation_report(report: Dict, investigation: Dict) -> str:
                 response += f"• {repo_name} ({repo_type}): ❌ Error - {error}\n"
             else:
                 response += f"• {repo_name} ({repo_type}): ⏳ Analysis pending\n"
+        response += "\n"
+    
+    # Issue-Focused Code Analysis Results (if available)
+    if investigation.get('focused_analysis') and investigation['focused_analysis'].get('focused_analysis'):
+        focused_analysis = investigation['focused_analysis']['focused_analysis']
+        response += "**🎯 Issue-Focused Code Analysis:**\n"
+        
+        # Show only relevant analysis based on the issue type
+        if focused_analysis.get('mobile_issues'):
+            response += f"• **📱 Mobile Issues:** {len(focused_analysis['mobile_issues'])} issues found\n"
+        
+        if focused_analysis.get('performance_issues'):
+            response += f"• **⚡ Performance Issues:** {len(focused_analysis['performance_issues'])} issues found\n"
+        
+        if focused_analysis.get('security_issues'):
+            response += f"• **🔒 Security Issues:** {len(focused_analysis['security_issues'])} issues found\n"
+        
+        if focused_analysis.get('theme_analysis'):
+            theme_analysis = focused_analysis['theme_analysis']
+            if theme_analysis.get('mobile_responsiveness'):
+                response += f"• **📱 Responsive Design Issues:** {len(theme_analysis['mobile_responsiveness'])} issues found\n"
+        
+        response += "\n"
+    
+    # LLM Analysis Results (if available)
+    if investigation.get('llm_analysis'):
+        llm_analysis = investigation['llm_analysis']
+        response += "**🤖 AI-Powered Analysis:**\n"
+        
+        # WordPress Core Analysis
+        if llm_analysis.get('wordpress_analysis'):
+            wp_analysis = llm_analysis['wordpress_analysis']
+            if isinstance(wp_analysis, dict) and 'analysis' in wp_analysis:
+                response += f"• **WordPress Core:** {wp_analysis['analysis'][:200]}...\n"
+        
+        # Theme Analysis
+        if llm_analysis.get('theme_analysis'):
+            theme_analysis = llm_analysis['theme_analysis']
+            if isinstance(theme_analysis, dict) and 'analysis' in theme_analysis:
+                response += f"• **Theme Issues:** {theme_analysis['analysis'][:200]}...\n"
+        
+        # Plugin Analysis
+        if llm_analysis.get('plugin_analysis'):
+            plugin_analysis = llm_analysis['plugin_analysis']
+            if isinstance(plugin_analysis, dict) and 'analysis' in plugin_analysis:
+                response += f"• **Plugin Issues:** {plugin_analysis['analysis'][:200]}...\n"
+        
+        # Performance Analysis
+        if llm_analysis.get('performance_analysis'):
+            perf_analysis = llm_analysis['performance_analysis']
+            if isinstance(perf_analysis, dict) and 'analysis' in perf_analysis:
+                response += f"• **Performance:** {perf_analysis['analysis'][:200]}...\n"
+        
         response += "\n"
     
     # Recent changes analysis
@@ -696,17 +795,23 @@ def _format_investigation_report(report: Dict, investigation: Dict) -> str:
             response += f"• {component}\n"
         response += "\n"
     
-    # Recommendations
-    if investigation['recommendations']:
-        response += "**Recommendations:**\n"
-        for rec in investigation['recommendations'][:5]:
-            response += f"• {rec}\n"
+    # Issue-Focused Recommendations
+    if investigation.get('focused_analysis') and investigation['focused_analysis'].get('relevant_recommendations'):
+        relevant_recs = investigation['focused_analysis']['relevant_recommendations']
+        response += "**🎯 Issue-Focused Recommendations:**\n"
+        for i, rec in enumerate(relevant_recs, 1):
+            response += f"{i}. {rec}\n"
+    elif investigation['recommendations']:
+        response += "**🎯 Recommendations:**\n"
+        for i, rec in enumerate(investigation['recommendations'][:5], 1):
+            response += f"{i}. {rec}\n"
     
     # Add helpful message about tokens if no commits were found
     if not investigation['recent_changes'] and investigation['repository_analysis']:
         response += "\n💡 **To get detailed code analysis:**\n"
         response += "• Add `AZURE_DEVOPS_TOKEN` to your `.env` file for Azure repositories\n"
         response += "• Add `GITHUB_TOKEN` to your `.env` file for GitHub repositories\n"
+        response += "• Add `OPENAI_API_KEY` to your `.env` file for AI-powered analysis\n"
         response += "• Get tokens from your platform's developer settings\n"
     
     return response
@@ -718,23 +823,18 @@ def handle_message(event, say):
     text = event.get("text", "").strip()
     event_type = event.get("type")
     
-    # Debug all message events
-    print(f"Received message event - Type: {event_type}, User: {user_id}, Channel: {channel}, Text: {text[:50]}...")
+
     
     # Skip bot messages and messages without user
     if not user_id or event.get("bot_id"):
-        print(f"Skipping message - no user or bot message")
         return
     
     # Check if user is in an active conversation
     if user_id not in user_conversations:
-        print(f"User {user_id} not in active conversation")
         return
 
     user_state = user_conversations[user_id]
     step = user_state["step"]
-    
-    print(f"Processing message from user {user_id} in channel {channel}, step {step}: {text[:50]}...")
 
     if step == 0:
         user_state["data"]["summary"] = text

@@ -5,6 +5,11 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 from github_integration import github_analyzer
 from azure_integration import azure_analyzer
 
@@ -281,7 +286,7 @@ class CodeAnalyzer:
             commits = azure_analyzer.get_recent_commits(
                 repo_config['url'], 
                 days=days, 
-                branch=repo_config.get('branch', 'main')
+                branch=repo_config.get('branch', 'develop')  # Default to develop for this project
             )
             
             # Extract bug-related keywords from the repository metadata
@@ -293,7 +298,7 @@ class CodeAnalyzer:
             # Get repository stats
             stats = azure_analyzer.get_repository_stats(
                 repo_config['url'], 
-                branch=repo_config.get('branch', 'main')
+                branch=repo_config.get('branch', 'develop')  # Default to develop for this project
             )
             
             return {

@@ -9,13 +9,20 @@ class AzureDevOpsAnalyzer:
     
     def __init__(self, azure_token: str = None):
         """Initialize Azure DevOps API client"""
-        self.azure_token = azure_token or os.getenv('AZURE_DEVOPS_TOKEN')
+        self.azure_token = azure_token
         self.base_url = "https://dev.azure.com"
+    
+    def _get_token(self):
+        """Get Azure token, reloading from environment if needed"""
+        if not self.azure_token:
+            self.azure_token = os.getenv('AZURE_DEVOPS_TOKEN')
+        return self.azure_token
     
     def extract_repo_info(self, repo_url: str) -> Tuple[str, str, str, str]:
         """Extract organization, project, and repo name from Azure DevOps URL"""
         # Handle Azure DevOps URL format: https://dev.azure.com/org/project/_git/repo
-        pattern = r'https://dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/]+)'
+        # Also handle URLs with angle brackets: <https://dev.azure.com/org/project/_git/repo>
+        pattern = r'<?https://dev\.azure\.com/([^/]+)/([^/]+)/_git/([^/>]+)>?'
         match = re.match(pattern, repo_url)
         if match:
             org = match.group(1)
@@ -27,11 +34,9 @@ class AzureDevOpsAnalyzer:
     
     def get_recent_commits(self, repo_url: str, days: int = 7, branch: str = "main") -> List[Dict]:
         """Get recent commits from an Azure DevOps repository"""
-        # Reload token in case it was set after initialization
-        if not self.azure_token:
-            self.azure_token = os.getenv('AZURE_DEVOPS_TOKEN')
+        azure_token = self._get_token()
         
-        if not self.azure_token:
+        if not azure_token:
             print("No Azure DevOps token configured")
             return []
         
@@ -43,7 +48,7 @@ class AzureDevOpsAnalyzer:
             
             # Azure DevOps uses Basic auth with username:token format
             import base64
-            auth_string = f":{self.azure_token}"
+            auth_string = f":{azure_token}"
             auth_bytes = auth_string.encode('ascii')
             auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
             
@@ -52,10 +57,10 @@ class AzureDevOpsAnalyzer:
                 'Content-Type': 'application/json'
             }
             
+            # Get the last 10 commits regardless of date
             params = {
                 'api-version': '6.0',
                 'searchCriteria.$top': 10,
-                'searchCriteria.fromDate': (datetime.now() - timedelta(days=days)).isoformat(),
                 'searchCriteria.itemVersion.version': branch
             }
             
@@ -192,11 +197,9 @@ class AzureDevOpsAnalyzer:
     
     def get_repository_stats(self, repo_url: str, branch: str = "main") -> Dict:
         """Get repository statistics and metrics"""
-        # Reload token in case it was set after initialization
-        if not self.azure_token:
-            self.azure_token = os.getenv('AZURE_DEVOPS_TOKEN')
+        azure_token = self._get_token()
         
-        if not self.azure_token:
+        if not azure_token:
             return {}
         
         try:
@@ -207,7 +210,7 @@ class AzureDevOpsAnalyzer:
             
             # Azure DevOps uses Basic auth with username:token format
             import base64
-            auth_string = f":{self.azure_token}"
+            auth_string = f":{azure_token}"
             auth_bytes = auth_string.encode('ascii')
             auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
             
@@ -243,5 +246,5 @@ class AzureDevOpsAnalyzer:
             print(f"Error getting Azure DevOps repository stats: {e}")
             return {}
 
-# Global instance
+# Global instance - will load token when needed
 azure_analyzer = AzureDevOpsAnalyzer() 
