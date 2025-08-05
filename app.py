@@ -317,15 +317,16 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
         print(f"Found config repo command in: '{text}'")
         # Format: config repo project_name repo_type repo_url [branch] [site_type] [hosting_platform]
         # Find the actual command part after bot mention
-        config_match = re.search(r'config repo\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?(?:\s+(\S+))?(?:\s+(\S+))?', text, re.IGNORECASE)
-        if config_match:
-            print(f"Config match found: {config_match.groups()}")
-            project_name = config_match.group(1)
-            repo_type_str = config_match.group(2).lower()
-            repo_url = config_match.group(3)
-            branch = config_match.group(4) if config_match.group(4) else "main"
-            site_type = config_match.group(5) if config_match.group(5) else ""
-            hosting_platform = config_match.group(6) if config_match.group(6) else ""
+        # Parse the config repo command manually
+        parts = text.split()
+        if len(parts) >= 4 and parts[0].lower() == 'config' and parts[1].lower() == 'repo':
+            project_name = parts[2]
+            repo_type_str = parts[3].lower()
+            repo_url = parts[4] if len(parts) > 4 else ""
+            branch = parts[5] if len(parts) > 5 else "main"
+            site_type = parts[6] if len(parts) > 6 else ""
+            hosting_platform = parts[7] if len(parts) > 7 else ""
+            print(f"Parsed config: project={project_name}, type={repo_type_str}, url={repo_url}, branch={branch}, site_type={site_type}, hosting={hosting_platform}")
             
             try:
                 repo_type = RepoType(repo_type_str)
