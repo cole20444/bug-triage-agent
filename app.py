@@ -145,8 +145,12 @@ def handle_mention(event, say):
     print(f"Received mention from user {user_id} in channel {channel}: {text[:50]}...")
     
     # Check if this is a management command first
+    print(f"Checking for management commands in: '{text[:50]}...'")
     if handle_management_commands(text, user_id, say):
+        print("Management command handled successfully")
         return
+    else:
+        print("No management command found, proceeding with normal flow")
     
     # If user is already in a conversation, try to parse their response
     if user_id in user_conversations:
@@ -226,10 +230,19 @@ Or just describe the issue naturally and I'll try to extract the information."""
 
 def handle_management_commands(text: str, user_id: str, say) -> bool:
     """Handle management commands for bug reports"""
+    # Extract bot mention if present
+    import re
+    bot_mention_match = re.search(r'<@([A-Z0-9]+)>', text)
+    if bot_mention_match:
+        bot_id = bot_mention_match.group(1)
+        text = text.replace(f"<@{bot_id}>", "").strip()
+    
     text_lower = text.lower().strip()
+    print(f"Checking management command: '{text_lower}'")
     
     # List recent reports
-    if text_lower in ['list reports', 'show reports', 'reports']:
+    if any(cmd in text_lower for cmd in ['list reports', 'show reports', 'reports', 'list']):
+        print(f"Executing list reports command")
         reports = storage.get_bug_reports(limit=5)
         if reports:
             response = "**Recent Bug Reports:**\n"
@@ -257,7 +270,7 @@ def handle_management_commands(text: str, user_id: str, say) -> bool:
         return True
     
     # Show stats
-    elif text_lower in ['stats', 'statistics', 'show stats']:
+    elif any(cmd in text_lower for cmd in ['stats', 'statistics', 'show stats']):
         stats = storage.get_stats()
         response = "**Bug Report Statistics:**\n"
         response += f"📊 Total Reports: {stats['total']}\n"
@@ -277,8 +290,14 @@ def handle_management_commands(text: str, user_id: str, say) -> bool:
         return True
     
     # Search reports
-    elif text_lower.startswith('search '):
-        query = text[7:].strip()  # Remove 'search ' prefix
+    elif text_lower.startswith('search ') or 'search' in text_lower:
+        # Extract search query - look for 'search' keyword and get everything after it
+        if text_lower.startswith('search '):
+            query = text[7:].strip()  # Remove 'search ' prefix
+        else:
+            # Find 'search' in the text and get everything after it
+            search_index = text_lower.find('search')
+            query = text[search_index + 6:].strip()  # Remove 'search' keyword
         if query:
             reports = storage.search_bug_reports(query, limit=3)
             if reports:
