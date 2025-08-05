@@ -72,6 +72,69 @@ user_conversations = {}
 REQUIRED_FIELDS = ["summary", "pages", "steps"]
 OPTIONAL_FIELDS = ["components"]
 
+def parse_bug_report(text):
+    """Parse a bug report text to extract structured information"""
+    import re
+    
+    # Initialize data structure
+    data = {
+        "summary": "",
+        "pages": "",
+        "steps": "",
+        "components": ""
+    }
+    
+    # Extract bot mention if present
+    bot_mention_match = re.search(r'<@([A-Z0-9]+)>', text)
+    if bot_mention_match:
+        bot_id = bot_mention_match.group(1)
+        text = text.replace(f"<@{bot_id}>", "").strip()
+    
+    # Try to extract information using common patterns
+    lines = text.split('\n')
+    
+    # Look for common patterns and keywords
+    for i, line in enumerate(lines):
+        line_lower = line.lower().strip()
+        
+        # Summary patterns
+        if any(keyword in line_lower for keyword in ['summary:', 'issue:', 'problem:', 'bug:', 'error:']):
+            data["summary"] = line.split(':', 1)[1].strip() if ':' in line else line.strip()
+        elif not data["summary"] and i == 0 and len(line.strip()) > 10:
+            # First substantial line is likely the summary
+            data["summary"] = line.strip()
+        
+        # Pages/URLs patterns
+        if any(keyword in line_lower for keyword in ['page:', 'url:', 'site:', 'website:', 'link:']):
+            data["pages"] = line.split(':', 1)[1].strip() if ':' in line else line.strip()
+        elif 'http' in line and not data["pages"]:
+            # Extract URLs
+            urls = re.findall(r'https?://[^\s]+', line)
+            if urls:
+                data["pages"] = ', '.join(urls)
+        
+        # Steps patterns
+        if any(keyword in line_lower for keyword in ['step:', 'reproduce:', 'how to:', 'steps:']):
+            data["steps"] = line.split(':', 1)[1].strip() if ':' in line else line.strip()
+        
+        # Components patterns
+        if any(keyword in line_lower for keyword in ['component:', 'template:', 'module:', 'feature:']):
+            data["components"] = line.split(':', 1)[1].strip() if ':' in line else line.strip()
+    
+    # If we have a multi-line response, try to intelligently parse
+    if len(lines) > 2 and not any(data.values()):
+        # Try to parse based on line position
+        if len(lines) >= 1:
+            data["summary"] = lines[0].strip()
+        if len(lines) >= 2 and 'http' in lines[1]:
+            data["pages"] = lines[1].strip()
+        if len(lines) >= 3:
+            data["steps"] = lines[2].strip()
+        if len(lines) >= 4:
+            data["components"] = lines[3].strip()
+    
+    return data
+
 @app.event("app_mention")
 def handle_mention(event, say):
     user_id = event["user"]
@@ -80,60 +143,68 @@ def handle_mention(event, say):
     
     print(f"Received mention from user {user_id} in channel {channel}: {text[:50]}...")
     
-    # If user is already in a conversation, try to extract their response from the mention
+    # If user is already in a conversation, try to parse their response
     if user_id in user_conversations:
         user_state = user_conversations[user_id]
-        step = user_state["step"]
-        print(f"User {user_id} already in conversation at step {step}")
+        print(f"User {user_id} already in conversation, parsing response...")
         
-        # Try to extract the actual message content (remove the bot mention)
-        # The text format is usually: "<@BOT_ID> actual message content"
-        # Extract bot ID from the mention in the text
-        import re
-        bot_mention_match = re.search(r'<@([A-Z0-9]+)>', text)
-        if bot_mention_match:
-            bot_id = bot_mention_match.group(1)
-            actual_message = text.replace(f"<@{bot_id}>", "").strip()
-        else:
-            actual_message = text.strip()
+        # Parse the response
+        parsed_data = parse_bug_report(text)
+        print(f"Parsed data: {parsed_data}")
         
-        if actual_message and len(actual_message) > 5:  # If there's actual content
-            print(f"Extracted message from mention: {actual_message[:50]}...")
-            # Process the message as if it came through the message handler
-            if step == 0:
-                user_state["data"]["summary"] = actual_message
-                say("Which *page(s)* are affected? (Please paste full URLs)")
-                user_state["step"] = 1
-            elif step == 1:
-                user_state["data"]["pages"] = actual_message
-                say("How can we *reproduce* the issue?")
-                user_state["step"] = 2
-            elif step == 2:
-                user_state["data"]["steps"] = actual_message
-                say("Are there any *templates or components* involved? _(Optional)_")
-                user_state["step"] = 3
-            elif step == 3:
-                user_state["data"]["components"] = actual_message
-                report = format_bug_report(user_state["data"])
-                say(f"✅ Here's your bug report:\n```{report}```\nI'll notify the dev team!")
-                del user_conversations[user_id]
-            return
+        # Update existing data with new parsed data
+        for key, value in parsed_data.items():
+            if value and not user_state["data"].get(key):
+                user_state["data"][key] = value
+        
+        # Check what's missing
+        missing_fields = []
+        if not user_state["data"].get("summary"):
+            missing_fields.append("brief summary")
+        if not user_state["data"].get("pages"):
+            missing_fields.append("affected pages/URLs")
+        if not user_state["data"].get("steps"):
+            missing_fields.append("steps to reproduce")
+        
+        if missing_fields:
+            missing_text = ", ".join(missing_fields[:-1])
+            if len(missing_fields) > 1:
+                missing_text += f" and {missing_fields[-1]}"
+            else:
+                missing_text = missing_fields[0]
+            
+            say(f"<@{user_id}> I still need the *{missing_text}*. Please provide this information.")
         else:
-            # No actual message content, just remind them what we need
-            if step == 0:
-                say(f"<@{user_id}> I'm waiting for your *brief summary* of the issue. Please provide a summary of what's happening.")
-            elif step == 1:
-                say(f"<@{user_id}> I'm waiting for the *affected page(s)*. Please paste the full URLs of the pages that are affected.")
-            elif step == 2:
-                say(f"<@{user_id}> I'm waiting for the *steps to reproduce* the issue. Please describe how to reproduce this problem.")
-            elif step == 3:
-                say(f"<@{user_id}> I'm waiting for any *templates or components* involved. If none, just say 'none' or 'N/A'.")
-            return
+            # We have all required fields, generate the report
+            report = format_bug_report(user_state["data"])
+            say(f"✅ Here's your bug report:\n```{report}```\nI'll notify the dev team!")
+            del user_conversations[user_id]
+        return
     
-    # Start new conversation
+    # Start new conversation with template
     user_conversations[user_id] = {"step": 0, "data": {}}
     print(f"Started new conversation with user {user_id} in channel {channel}")
-    say(f"<@{user_id}> Thanks for reporting a bug! Let's gather some details.\nFirst, what's a *brief summary* of the issue?")
+    
+    template_message = f"""<@{user_id}> Thanks for reporting a bug! 
+
+Please provide the following information in your response:
+
+*Summary:* Brief description of the issue
+*Pages:* Full URLs of affected pages (e.g., https://example.com/page)
+*Steps:* How to reproduce the issue
+*Components:* Any templates/components involved (optional)
+
+You can format it like this:
+```
+Summary: Mobile load issue affecting Core Web Vitals
+Pages: https://wnpf.org/, https://wnpf.org/about
+Steps: Open mobile browser, navigate to homepage, check PageSpeed Insights
+Components: Header template, mobile navigation
+```
+
+Or just describe the issue naturally and I'll try to extract the information."""
+    
+    say(template_message)
 
 @app.event("message")
 def handle_message(event, say):
