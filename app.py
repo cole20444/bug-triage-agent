@@ -1,6 +1,7 @@
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from report_handler import format_bug_report
+from storage import storage
 import requests
 
 import os
@@ -143,6 +144,10 @@ def handle_mention(event, say):
     
     print(f"Received mention from user {user_id} in channel {channel}: {text[:50]}...")
     
+    # Check if this is a management command first
+    if handle_management_commands(text, user_id, say):
+        return
+    
     # If user is already in a conversation, try to parse their response
     if user_id in user_conversations:
         user_state = user_conversations[user_id]
@@ -175,9 +180,22 @@ def handle_mention(event, say):
             
             say(f"<@{user_id}> I still need the *{missing_text}*. Please provide this information.")
         else:
-            # We have all required fields, generate the report
-            report = format_bug_report(user_state["data"])
-            say(f"✅ Here's your bug report:\n```{report}```\nI'll notify the dev team!")
+            # We have all required fields, save to database and generate the report
+            try:
+                report_id = storage.save_bug_report(user_id, channel, user_state["data"])
+                report = format_bug_report(user_state["data"])
+                
+                # Add report ID to the formatted report
+                report_with_id = f"**Bug Report - {report_id}**\n\n{report}"
+                
+                say(f"✅ Here's your bug report:\n```{report_with_id}```\nI'll notify the dev team!")
+                print(f"Saved bug report {report_id} to database")
+                
+            except Exception as e:
+                print(f"Error saving bug report: {e}")
+                report = format_bug_report(user_state["data"])
+                say(f"✅ Here's your bug report:\n```{report}```\nI'll notify the dev team!")
+            
             del user_conversations[user_id]
         return
     
@@ -205,6 +223,95 @@ Components: Header template, mobile navigation
 Or just describe the issue naturally and I'll try to extract the information."""
     
     say(template_message)
+
+def handle_management_commands(text: str, user_id: str, say) -> bool:
+    """Handle management commands for bug reports"""
+    text_lower = text.lower().strip()
+    
+    # List recent reports
+    if text_lower in ['list reports', 'show reports', 'reports']:
+        reports = storage.get_bug_reports(limit=5)
+        if reports:
+            response = "**Recent Bug Reports:**\n"
+            for report in reports:
+                status_emoji = {
+                    'new': '🆕',
+                    'in_progress': '🔄',
+                    'resolved': '✅',
+                    'closed': '🔒'
+                }.get(report['status'], '❓')
+                
+                priority_emoji = {
+                    'low': '🟢',
+                    'medium': '🟡',
+                    'high': '🔴',
+                    'critical': '🚨'
+                }.get(report['priority'], '⚪')
+                
+                response += f"{status_emoji} {priority_emoji} *{report['report_id']}* - {report['summary'][:50]}...\n"
+                response += f"   Status: {report['status']}, Priority: {report['priority']}, Created: {report['created_at'][:10]}\n\n"
+        else:
+            response = "No bug reports found."
+        
+        say(response)
+        return True
+    
+    # Show stats
+    elif text_lower in ['stats', 'statistics', 'show stats']:
+        stats = storage.get_stats()
+        response = "**Bug Report Statistics:**\n"
+        response += f"📊 Total Reports: {stats['total']}\n"
+        response += f"📈 Recent (7 days): {stats['recent_7_days']}\n\n"
+        
+        if stats['by_status']:
+            response += "**By Status:**\n"
+            for status, count in stats['by_status'].items():
+                response += f"  {status}: {count}\n"
+        
+        if stats['by_priority']:
+            response += "\n**By Priority:**\n"
+            for priority, count in stats['by_priority'].items():
+                response += f"  {priority}: {count}\n"
+        
+        say(response)
+        return True
+    
+    # Search reports
+    elif text_lower.startswith('search '):
+        query = text[7:].strip()  # Remove 'search ' prefix
+        if query:
+            reports = storage.search_bug_reports(query, limit=3)
+            if reports:
+                response = f"**Search Results for '{query}':**\n"
+                for report in reports:
+                    response += f"🔍 *{report['report_id']}* - {report['summary'][:60]}...\n"
+                    response += f"   Status: {report['status']}, Created: {report['created_at'][:10]}\n\n"
+            else:
+                response = f"No reports found matching '{query}'."
+            
+            say(response)
+            return True
+    
+    # Help command
+    elif text_lower in ['help', 'commands', 'what can you do']:
+        help_text = """**Bug Triage Agent Commands:**
+
+📝 **Report a Bug:**
+Just mention me and describe the issue!
+
+📋 **Management Commands:**
+• `list reports` - Show recent bug reports
+• `stats` - Show bug report statistics  
+• `search [term]` - Search for reports
+• `help` - Show this help message
+
+**Example:**
+@Bug Triage Agent search mobile performance"""
+        
+        say(help_text)
+        return True
+    
+    return False
 
 @app.event("message")
 def handle_message(event, say):
