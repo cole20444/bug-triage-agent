@@ -1,6 +1,7 @@
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from report_handler import format_bug_report
+import requests
 
 import os
 from dotenv import load_dotenv
@@ -8,6 +9,62 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = App(token=os.environ["SLACK_BOT_TOKEN"])
+
+def check_app_config():
+    """Check and display the current app configuration"""
+    try:
+        # Get app info using the bot token
+        headers = {
+            "Authorization": f"Bearer {os.environ['SLACK_BOT_TOKEN']}",
+            "Content-Type": "application/json"
+        }
+        
+        # Get auth info to see scopes
+        auth_response = requests.get("https://slack.com/api/auth.test", headers=headers)
+        if auth_response.status_code == 200:
+            auth_data = auth_response.json()
+            if auth_data.get("ok"):
+                print("✅ Bot authentication successful")
+                print(f"   Bot User ID: {auth_data.get('user_id')}")
+                print(f"   Team: {auth_data.get('team')}")
+                print(f"   User: {auth_data.get('user')}")
+            else:
+                print(f"❌ Auth test failed: {auth_data.get('error')}")
+        
+        # Get app info using the app token (for scopes)
+        app_headers = {
+            "Authorization": f"Bearer {os.environ['SLACK_APP_TOKEN']}",
+            "Content-Type": "application/json"
+        }
+        
+        # Note: We can't get event subscriptions via API without admin permissions
+        # But we can show what we expect vs what we have
+        
+        print("\n📋 Expected Configuration:")
+        print("   Bot Token Scopes:")
+        print("   - app_mentions:read")
+        print("   - chat:write")
+        print("   - im:history")
+        print("   - im:read")
+        print("   - im:write")
+        print("   - channels:history (for channel messages)")
+        print("   - groups:history (for private channel messages)")
+        print("   - mpim:history (for group DMs)")
+        print("\n   Event Subscriptions:")
+        print("   - app_mention")
+        print("   - message.channels")
+        print("   - message.groups")
+        print("   - message.im")
+        print("   - message.mpim")
+        
+        print("\n🔧 To check your actual configuration:")
+        print("   1. Go to https://api.slack.com/apps")
+        print("   2. Select your 'Bug Triage Agent' app")
+        print("   3. Check 'OAuth & Permissions' for scopes")
+        print("   4. Check 'Event Subscriptions' for events")
+        
+    except Exception as e:
+        print(f"❌ Error checking app config: {e}")
 
 # Store conversation state per user
 user_conversations = {}
@@ -122,5 +179,8 @@ def handle_message(event, say):
     user_state["step"] += 1
 
 if __name__ == "__main__":
+    print("🔍 Checking app configuration...")
+    check_app_config()
+    print("\n🚀 Starting bot...")
     handler = SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"])
     handler.start()
