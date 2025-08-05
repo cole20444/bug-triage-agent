@@ -242,7 +242,7 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     print(f"Checking management command: '{text_lower}'")
     
     # List recent reports
-    if any(cmd in text_lower for cmd in ['list reports', 'show reports', 'reports', 'list']):
+    if any(cmd in text_lower for cmd in ['list reports', 'show reports', 'reports']) and 'repo' not in text_lower:
         print(f"Executing list reports command")
         reports = storage.get_bug_reports(limit=5)
         if reports:
@@ -369,7 +369,8 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
         return True
     
     # List repository configurations
-    elif text_lower in ['list repos', 'show repos', 'repo configs']:
+    elif any(cmd in text_lower for cmd in ['list repos', 'show repos', 'repo configs', 'list repositories']):
+        print(f"Executing list repos command")
         configs = repo_manager.list_channel_configs()
         
         if configs:
