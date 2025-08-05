@@ -19,8 +19,7 @@ OPTIONAL_FIELDS = ["components"]
 def handle_mention(event, say):
     user_id = event["user"]
     user_conversations[user_id] = {"step": 0, "data": {}}
-    say(f"<@{user_id}> Thanks for reporting a bug! Let's gather some details.
-First, what's a *brief summary* of the issue?")
+    say(f"<@{user_id}> Thanks for reporting a bug! Let's gather some details.\nFirst, what's a *brief summary* of the issue?")
 
 @app.event("message")
 def handle_message(event, say):
@@ -44,9 +43,7 @@ def handle_message(event, say):
     elif step == 3:
         user_state["data"]["components"] = text
         report = format_bug_report(user_state["data"])
-        say(f"✅ Here's your bug report:
-```{report}```
-I'll notify the dev team!")
+        say(f"✅ Here's your bug report:\n```{report}```\nI'll notify the dev team!")
         del user_conversations[user_id]
         return
 
