@@ -451,6 +451,29 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
         say(response)
         return True
     
+    # Update bug report
+    elif text_lower.startswith('update'):
+        update_match = re.search(r'update\s+(\S+)\s+(summary|steps|pages|components|priority|status)\s+(.+)', text, re.IGNORECASE)
+        if update_match:
+            report_id = update_match.group(1)
+            field = update_match.group(2).lower()
+            new_value = update_match.group(3).strip()
+            
+            report = storage.get_bug_report(report_id)
+            if not report:
+                say(f"❌ Bug report *{report_id}* not found")
+                return True
+            
+            # Update the specified field
+            success = storage.update_bug_report(report_id, {field: new_value})
+            if success:
+                say(f"✅ Updated *{field}* for bug report *{report_id}*\nNew value: {new_value}")
+            else:
+                say(f"❌ Failed to update bug report *{report_id}*")
+        else:
+            say("❌ Usage: `update BUG-2025-001 summary New summary text`\nSupported fields: summary, steps, pages, components, priority, status\nExample: `update BUG-2025-001 priority high`")
+        return True
+    
     # Investigate specific bug report
     elif text_lower.startswith('investigate'):
         # Format: investigate BUG-2025-001
@@ -495,6 +518,7 @@ Just mention me and describe the issue!
 • `list reports` - Show recent bug reports
 • `stats` - Show bug report statistics  
 • `search [term]` - Search for reports
+• `update BUG-2025-001 field value` - Update bug report fields
 • `help` - Show this help message
 
 🔧 **Repository Integration:**
@@ -516,6 +540,7 @@ Just mention me and describe the issue!
 @Bug Triage Agent add tags client-website high-traffic seo-critical
 @Bug Triage Agent analyze changes
 @Bug Triage Agent investigate BUG-2025-001
+@Bug Triage Agent update BUG-2025-001 priority high
 @Bug Triage Agent search mobile performance"""
         
         say(help_text)
