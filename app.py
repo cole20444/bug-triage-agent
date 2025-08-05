@@ -536,7 +536,15 @@ def _investigate_bug(report: Dict, config: Dict) -> Dict:
     
     # Analyze each repository in the configuration
     for repo_config in config['repos']:
-        repo_analysis = code_analyzer._analyze_github_repo(repo_config, days=7)
+        repo_type = repo_config.get('type', 'github')
+        print(f"Analyzing {repo_type} repository: {repo_config['name']}")
+        
+        if repo_type == 'azure':
+            repo_analysis = code_analyzer._analyze_azure_repo(repo_config, days=7)
+        elif repo_type == 'github':
+            repo_analysis = code_analyzer._analyze_github_repo(repo_config, days=7)
+        else:
+            repo_analysis = code_analyzer._analyze_github_repo(repo_config, days=7)  # fallback
         investigation['repository_analysis'].append(repo_analysis)
         
         # Extract potential causes from high-impact commits
@@ -607,6 +615,25 @@ def _format_investigation_report(report: Dict, investigation: Dict) -> str:
     # Bug summary
     response += f"**Bug Summary:**\n{report.get('summary', 'N/A')}\n\n"
     
+    # Repository analysis status
+    if investigation['repository_analysis']:
+        response += "**Repository Analysis:**\n"
+        for repo_analysis in investigation['repository_analysis']:
+            repo_name = repo_analysis.get('name', 'Unknown')
+            repo_type = repo_analysis.get('type', 'unknown')
+            status = repo_analysis.get('status', 'unknown')
+            
+            if status == 'analyzed':
+                commits_count = len(repo_analysis.get('recent_commits', []))
+                files_count = len(repo_analysis.get('changed_files', []))
+                response += f"• {repo_name} ({repo_type}): {commits_count} recent commits, {files_count} files changed\n"
+            elif status == 'error':
+                error = repo_analysis.get('error', 'Unknown error')
+                response += f"• {repo_name} ({repo_type}): ❌ Error - {error}\n"
+            else:
+                response += f"• {repo_name} ({repo_type}): ⏳ Analysis pending\n"
+        response += "\n"
+    
     # Recent changes analysis
     if investigation['recent_changes']:
         response += "**Recent Code Changes:**\n"
@@ -634,6 +661,13 @@ def _format_investigation_report(report: Dict, investigation: Dict) -> str:
         response += "**Recommendations:**\n"
         for rec in investigation['recommendations'][:5]:
             response += f"• {rec}\n"
+    
+    # Add helpful message about tokens if no commits were found
+    if not investigation['recent_changes'] and investigation['repository_analysis']:
+        response += "\n💡 **To get detailed code analysis:**\n"
+        response += "• Add `AZURE_DEVOPS_TOKEN` to your `.env` file for Azure repositories\n"
+        response += "• Add `GITHUB_TOKEN` to your `.env` file for GitHub repositories\n"
+        response += "• Get tokens from your platform's developer settings\n"
     
     return response
 
