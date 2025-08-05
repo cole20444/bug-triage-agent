@@ -27,6 +27,10 @@ class AzureDevOpsAnalyzer:
     
     def get_recent_commits(self, repo_url: str, days: int = 7, branch: str = "main") -> List[Dict]:
         """Get recent commits from an Azure DevOps repository"""
+        # Reload token in case it was set after initialization
+        if not self.azure_token:
+            self.azure_token = os.getenv('AZURE_DEVOPS_TOKEN')
+        
         if not self.azure_token:
             print("No Azure DevOps token configured")
             return []
@@ -37,8 +41,14 @@ class AzureDevOpsAnalyzer:
             # Azure DevOps REST API endpoint for commits
             api_url = f"{self.base_url}/{org}/{project}/_apis/git/repositories/{repo}/commits"
             
+            # Azure DevOps uses Basic auth with username:token format
+            import base64
+            auth_string = f":{self.azure_token}"
+            auth_bytes = auth_string.encode('ascii')
+            auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+            
             headers = {
-                'Authorization': f'Basic {self.azure_token}',
+                'Authorization': f'Basic {auth_b64}',
                 'Content-Type': 'application/json'
             }
             
@@ -182,6 +192,10 @@ class AzureDevOpsAnalyzer:
     
     def get_repository_stats(self, repo_url: str, branch: str = "main") -> Dict:
         """Get repository statistics and metrics"""
+        # Reload token in case it was set after initialization
+        if not self.azure_token:
+            self.azure_token = os.getenv('AZURE_DEVOPS_TOKEN')
+        
         if not self.azure_token:
             return {}
         
@@ -191,8 +205,14 @@ class AzureDevOpsAnalyzer:
             # Azure DevOps REST API endpoint for repository info
             api_url = f"{self.base_url}/{org}/{project}/_apis/git/repositories/{repo}"
             
+            # Azure DevOps uses Basic auth with username:token format
+            import base64
+            auth_string = f":{self.azure_token}"
+            auth_bytes = auth_string.encode('ascii')
+            auth_b64 = base64.b64encode(auth_bytes).decode('ascii')
+            
             headers = {
-                'Authorization': f'Basic {self.azure_token}',
+                'Authorization': f'Basic {auth_b64}',
                 'Content-Type': 'application/json'
             }
             
