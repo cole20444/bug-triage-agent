@@ -315,15 +315,17 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
     # Repository configuration commands
     elif 'config repo' in text_lower:
         print(f"Found config repo command in: '{text}'")
-        # Format: config repo project_name repo_type repo_url [branch]
+        # Format: config repo project_name repo_type repo_url [branch] [site_type] [hosting_platform]
         # Find the actual command part after bot mention
-        config_match = re.search(r'config repo\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?', text, re.IGNORECASE)
+        config_match = re.search(r'config repo\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?(?:\s+(\S+))?(?:\s+(\S+))?', text, re.IGNORECASE)
         if config_match:
             print(f"Config match found: {config_match.groups()}")
             project_name = config_match.group(1)
             repo_type_str = config_match.group(2).lower()
             repo_url = config_match.group(3)
             branch = config_match.group(4) if config_match.group(4) else "main"
+            site_type = config_match.group(5) if config_match.group(5) else ""
+            hosting_platform = config_match.group(6) if config_match.group(6) else ""
             
             try:
                 repo_type = RepoType(repo_type_str)
@@ -332,7 +334,9 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
                     type=repo_type,
                     url=repo_url,
                     token="",  # Would need to be provided securely
-                    branch=branch
+                    branch=branch,
+                    site_type=site_type,
+                    hosting_platform=hosting_platform
                 )
                 
                 success = repo_manager.add_channel_config(
@@ -340,14 +344,66 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
                 )
                 
                 if success:
-                    say(f"✅ Repository configured for project: *{project_name}*\nType: {repo_type.value}\nURL: {repo_url}\nBranch: {branch}")
+                    response = f"✅ Repository configured for project: *{project_name}*\nType: {repo_type.value}\nURL: {repo_url}\nBranch: {branch}"
+                    if site_type:
+                        response += f"\nSite Type: {site_type}"
+                    if hosting_platform:
+                        response += f"\nHosting Platform: {hosting_platform}"
+                    say(response)
                 else:
                     say("❌ Failed to configure repository")
                     
             except ValueError:
                 say(f"❌ Invalid repository type: {repo_type_str}\nSupported types: github, azure, bitbucket, adobe")
         else:
-            say("❌ Usage: `config repo project_name repo_type repo_url [branch]`\nExample: `config repo client-website github https://github.com/client/website main`")
+            say("❌ Usage: `config repo project_name repo_type repo_url [branch] [site_type] [hosting_platform]`\nExample: `config repo client-website github https://github.com/client/website main wordpress wordpress-vip`")
+        return True
+    
+    # Add tags to repository
+    elif text_lower.startswith('add tags'):
+        # Format: add tags project_name tag1 tag2 tag3
+        tag_match = re.search(r'add tags\s+(\S+)\s+(.+)', text, re.IGNORECASE)
+        if tag_match:
+            project_name = tag_match.group(1)
+            tags_text = tag_match.group(2)
+            tags = [tag.strip() for tag in tags_text.split()]
+            
+            # Get current config and update tags
+            configs = repo_manager.list_channel_configs()
+            for config in configs:
+                for repo in config['repos']:
+                    if repo['name'] == project_name:
+                        # Update tags
+                        current_tags = repo.get('custom_tags', [])
+                        new_tags = list(set(current_tags + tags))  # Remove duplicates
+                        repo['custom_tags'] = new_tags
+                        
+                        # Re-save the configuration
+                        repo_config = RepositoryConfig(
+                            name=repo['name'],
+                            type=RepoType(repo['type']),
+                            url=repo['url'],
+                            token=repo.get('token', ''),
+                            branch=repo.get('branch', 'main'),
+                            site_type=repo.get('site_type', ''),
+                            hosting_platform=repo.get('hosting_platform', ''),
+                            business_domain=repo.get('business_domain', ''),
+                            custom_tags=new_tags
+                        )
+                        
+                        success = repo_manager.add_channel_config(
+                            config['channel_id'], config['channel_name'], config['project_name'], [repo_config]
+                        )
+                        
+                        if success:
+                            say(f"✅ Added tags to *{project_name}*: {', '.join(tags)}\nAll tags: {', '.join(new_tags)}")
+                        else:
+                            say("❌ Failed to update repository tags")
+                        return True
+            
+            say(f"❌ Project *{project_name}* not found")
+        else:
+            say("❌ Usage: `add tags project_name tag1 tag2 tag3`\nExample: `add tags client-website high-traffic seo-critical compliance`")
         return True
     
     # Analyze recent changes
@@ -379,6 +435,12 @@ def handle_management_commands(text: str, user_id: str, say, channel_id: str = N
                 response += f"📂 *{config['project_name']}* (Channel: {config['channel_name']})\n"
                 for repo in config['repos']:
                     response += f"   • {repo['name']} ({repo['type']}) - {repo['url']}\n"
+                    if repo.get('site_type'):
+                        response += f"     Site Type: {repo['site_type']}\n"
+                    if repo.get('hosting_platform'):
+                        response += f"     Hosting: {repo['hosting_platform']}\n"
+                    if repo.get('custom_tags'):
+                        response += f"     Tags: {', '.join(repo['custom_tags'])}\n"
                 response += "\n"
         else:
             response = "No repository configurations found.\nUse `config repo` to set up repositories."
@@ -400,15 +462,19 @@ Just mention me and describe the issue!
 • `help` - Show this help message
 
 🔧 **Repository Integration:**
-• `config repo project_name type url [branch]` - Configure repository
+• `config repo project_name type url [branch] [site_type] [hosting_platform]` - Configure repository
+• `add tags project_name tag1 tag2` - Add tags to repository
 • `list repos` - Show repository configurations
 • `analyze changes` - Analyze recent code changes
 • `recent changes` - Same as analyze changes
 
 **Repository Types:** github, azure, bitbucket, adobe
+**Site Types:** wordpress, react, laravel, vue, etc.
+**Hosting Platforms:** wordpress-vip, netlify, vercel, aws, etc.
 
 **Examples:**
-@Bug Triage Agent config repo client-website github https://github.com/client/website
+@Bug Triage Agent config repo client-website github https://github.com/client/website main wordpress wordpress-vip
+@Bug Triage Agent add tags client-website high-traffic seo-critical
 @Bug Triage Agent analyze changes
 @Bug Triage Agent search mobile performance"""
         

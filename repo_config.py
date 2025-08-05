@@ -21,12 +21,18 @@ class RepositoryConfig:
     branch: str = "main"
     paths: List[str] = None
     ignore_patterns: List[str] = None
+    site_type: str = ""  # e.g., "wordpress", "react", "laravel"
+    hosting_platform: str = ""  # e.g., "wordpress-vip", "netlify", "vercel"
+    business_domain: str = ""  # e.g., "healthcare", "finance", "education"
+    custom_tags: List[str] = None  # e.g., ["high-traffic", "seo-critical", "compliance"]
     
     def __post_init__(self):
         if self.paths is None:
             self.paths = []
         if self.ignore_patterns is None:
             self.ignore_patterns = []
+        if self.custom_tags is None:
+            self.custom_tags = []
 
 class RepositoryManager:
     def __init__(self, db_path: str = "bug_reports.db"):
@@ -65,7 +71,11 @@ class RepositoryManager:
             'token': repo.token,
             'branch': repo.branch,
             'paths': repo.paths,
-            'ignore_patterns': repo.ignore_patterns
+            'ignore_patterns': repo.ignore_patterns,
+            'site_type': repo.site_type,
+            'hosting_platform': repo.hosting_platform,
+            'business_domain': repo.business_domain,
+            'custom_tags': repo.custom_tags
         } for repo in repos])
         
         with sqlite3.connect(self.db_path) as conn:
@@ -125,6 +135,26 @@ class CodeAnalyzer:
     
     def __init__(self, repo_manager: RepositoryManager):
         self.repo_manager = repo_manager
+    
+    def detect_site_type(self, repo_config: Dict) -> Dict[str, str]:
+        """Detect site type and technology stack from repository"""
+        # This would analyze the repository structure and files
+        # For now, return placeholder detection logic
+        detection = {
+            'site_type': '',
+            'hosting_platform': '',
+            'framework': '',
+            'language': '',
+            'confidence': 'low'
+        }
+        
+        # Example detection logic (would be implemented with actual API calls)
+        if repo_config.get('url', '').startswith('https://github.com'):
+            # Would fetch repository files and analyze
+            detection['site_type'] = 'detected_from_code'
+            detection['confidence'] = 'medium'
+        
+        return detection
     
     def analyze_recent_changes(self, channel_id: str, days: int = 7) -> Dict:
         """Analyze recent code changes for a channel's repositories"""
